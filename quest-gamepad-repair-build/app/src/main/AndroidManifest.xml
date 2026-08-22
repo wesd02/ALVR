@@ -11,7 +11,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Quest Gamepad Repair v5"
+        android:label="Quest Gamepad Repair v6"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
         <activity
