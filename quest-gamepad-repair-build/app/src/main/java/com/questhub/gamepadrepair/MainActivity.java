@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         repairService = new RepairService(this);
         setContentView(buildUi());
-        appendLog("Quest-only v2 ready. Nothing is changed until you explicitly press a repair button.");
+        appendLog("Quest-only v4 ready. Nothing is changed until you explicitly press a repair button.");
         runTask("Checking saved local ADB pairing…", () -> {
             boolean connected = AdbClient.autoConnect(this);
             setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — use the hidden-settings bootstrap above");
@@ -39,7 +39,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(28), dp(24), dp(28), dp(36)); root.setBackgroundColor(0xFF101416);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
-        root.addView(text("Quest Gamepad Repair v2", 30, true));
+        root.addView(text("Quest Gamepad Repair v4", 30, true));
         TextView subtitle = text("Quest-only bootstrap • hidden Android Settings • local ADB • guarded repair • rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
 
         root.addView(sectionTitle("0 · Unlock hidden Android Settings — no PC/phone/Pi"));
@@ -91,7 +91,7 @@ public final class MainActivity extends Activity {
     }
     private void autoConnect() { runTask("Searching for paired local ADB…", () -> { boolean connected = AdbClient.autoConnect(this); setConnectionStatus(connected || AdbClient.isConnected(this) ? "Connected to local ADB shell" : "No paired ADB service found"); }); }
     private void manualConnect() { final int port; try { port = parsePort(connectionPort.getText().toString()); } catch (Exception e) { appendLog("Manual connection port is invalid."); return; } runTask("Connecting to local ADB port " + port + "…", () -> { boolean connected = AdbClient.connect(this, port); setConnectionStatus(connected || AdbClient.isConnected(this) ? "Connected to local ADB shell" : "Connection failed"); }); }
-    private void diagnose() { runTask("Reading Horizon OS settings — no changes…", () -> { RepairService.DiagnosticReport report = repairService.diagnose(); lastReport = report; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(report))); appendLog("Diagnosis complete: " + report.plan.size() + " safe disabled candidate(s)."); }); }
+    private void diagnose() { runTask("Reading Horizon OS settings — no changes…", () -> { RepairService.DiagnosticReport report = repairService.diagnose(); lastReport = report; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(report))); String identity = report.identity == null ? "<unknown>" : report.identity.replace('\n', ' ').replace('\r', ' '); appendLog("ADB identity: " + identity); appendLog("Diagnosis complete: shell UID " + (report.shellUid ? "VERIFIED" : "NOT VERIFIED") + "; " + report.plan.size() + " safe disabled candidate(s)."); }); }
     private void applySafeRepair() { RepairService.DiagnosticReport report = lastReport; if (report == null) { appendLog("Run Diagnose first so the exact proposed changes are visible before repair."); return; } runTask("Applying only the displayed safe repair plan…", () -> { appendResult("Safe repair", repairService.applySafeRepair(report)); RepairService.DiagnosticReport verified = repairService.diagnose(); lastReport = verified; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(verified))); }); }
     private void applyExperimental() { runTask("Applying reversible experimental compatibility property…", () -> { appendResult("Experimental repair", repairService.applyExperimentalCompatibilityRepair()); if (AdbClient.isConnected(this)) { RepairService.DiagnosticReport verified = repairService.diagnose(); lastReport = verified; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(verified))); } }); }
     private void restore() { runTask("Restoring values recorded by this app…", () -> { appendResult("Restore", repairService.restore()); if (AdbClient.isConnected(this)) { RepairService.DiagnosticReport verified = repairService.diagnose(); lastReport = verified; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(verified))); } }); }
