@@ -14,10 +14,17 @@ final class ShellFraming {
     static String script(String command, String marker) {
         if (command == null || command.isEmpty()) throw new IllegalArgumentException("empty command");
         if (marker == null || !marker.matches("[A-Za-z0-9_]+")) throw new IllegalArgumentException("invalid marker");
+
+        // Keep the complete raw delimiters out of the transmitted input. Horizon can
+        // echo commands before `stty -echo` takes effect; if the raw marker appeared
+        // in an echoed printf command, the reader could mistake that echo for actual
+        // command completion. The shell assembles each delimiter from two literals.
+        String suffix = marker + "__";
         return "stty -echo 2>/dev/null\n"
-                + "printf '" + begin(marker) + "\\n'\n"
+                + "PS1=''; PS2=''\n"
+                + "printf '%s%s\\n' '__QGR_BEGIN_' '" + suffix + "'\n"
                 + command + "\n"
-                + "printf '\\n" + end(marker) + "\\n'\n"
+                + "printf '\\n%s%s\\n' '__QGR_END_' '" + suffix + "'\n"
                 + "exit\n";
     }
 
