@@ -8,12 +8,14 @@ import org.junit.Test;
 
 public final class ShellFramingTest {
     @Test
-    public void scriptUsesInteractiveShellMarkersAndExit() {
+    public void scriptBuildsMarkersWithoutEmbeddingRawDelimiters() {
         String marker = "QGR_ABC123";
         String script = ShellFraming.script("id", marker);
         assertTrue(script.contains("stty -echo"));
-        assertTrue(script.contains(ShellFraming.begin(marker)));
-        assertTrue(script.contains(ShellFraming.end(marker)));
+        assertTrue(script.contains("PS1=''"));
+        assertTrue(script.contains("PS2=''"));
+        assertFalse("raw begin marker must not appear in echoed input", script.contains(ShellFraming.begin(marker)));
+        assertFalse("raw end marker must not appear in echoed input", script.contains(ShellFraming.end(marker)));
         assertTrue(script.endsWith("exit\n"));
         assertFalse(script.contains("shell:id"));
     }
@@ -29,25 +31,24 @@ public final class ShellFramingTest {
     }
 
     @Test
-    public void ignoresMarkersInsideEchoedPrintfCommands() {
+    public void echoedCommandsCannotFakeCompletion() {
         String marker = "QGR_ABC123";
         String begin = ShellFraming.begin(marker);
         String end = ShellFraming.end(marker);
-        String echoedPrefix = "quest:/ $ stty -echo 2>/dev/null\r\n"
-                + "quest:/ $ printf '" + begin + "\\n'\r\n"
-                + "quest:/ $ id\r\n"
-                + "quest:/ $ printf '\\n" + end + "\\n'\r\n"
-                + "quest:/ $ exit\r\n";
+        String script = ShellFraming.script("id", marker);
+        String echoedOnly = "quest:/ $ " + script.replace("\n", "\r\nquest:/ $ ");
 
-        assertFalse("an echoed printf command is not command completion",
-                ShellFraming.isComplete(echoedPrefix, marker));
+        assertFalse(script.contains(begin));
+        assertFalse(script.contains(end));
+        assertFalse("echoed input alone must never contain the completion delimiter",
+                ShellFraming.isComplete(echoedOnly, marker));
 
-        String actualTranscript = echoedPrefix
-                + begin + "\r\n"
+        String actualTranscript = echoedOnly
+                + "\r\nquest:/ $ " + begin + "\r\n"
                 + "uid=2000(shell) gid=2000(shell) groups=1003(graphics)\r\n"
-                + end + "\r\n";
+                + "quest:/ $ " + end + "\r\n";
         assertTrue(ShellFraming.isComplete(actualTranscript, marker));
-        assertEquals("uid=2000(shell) gid=2000(shell) groups=1003(graphics)",
+        assertEquals("uid=2000(shell) gid=2000(shell) groups=1003(graphics)\nquest:/ $",
                 ShellFraming.extract(actualTranscript, marker));
     }
 
