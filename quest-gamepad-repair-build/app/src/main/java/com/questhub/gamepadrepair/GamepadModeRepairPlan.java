@@ -23,16 +23,8 @@ public final class GamepadModeRepairPlan {
         return "device_config list_local_overrides";
     }
 
-    public static String helpCommand() {
-        return "device_config help";
-    }
-
-    public static boolean supportsStickyOverride(String help) {
-        if (help == null) return false;
-        String value = help.toLowerCase();
-        return value.contains("override namespace key value")
-                && value.contains("clear_override namespace key")
-                && value.contains("list_local_overrides");
+    public static String capabilityProbeCommand() {
+        return listOverridesCommand();
     }
 
     public static boolean hasTargetOverride(String output) {
