@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - 'ci/quest-gamepad-repair-apk-20260821'
+  pull_request:
+    branches:
+      - experimental
+    paths:
+      - 'quest-gamepad-repair-build/**'
+      - '.github/workflows/quest-gamepad-repair-apk-temp.yml'
   workflow_dispatch:
 
 permissions:
