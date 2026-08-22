@@ -4,10 +4,17 @@ import android.content.Context;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -18,6 +25,10 @@ import io.github.muntashirakon.adb.android.AndroidUtils;
 
 public final class AdbClient {
     private static final int MAX_SHELL_COMMAND_CHARS = 96;
+    private static final int MAX_SHELL_OUTPUT_BYTES = 4 * 1024 * 1024;
+    private static final long SHELL_TIMEOUT_SECONDS = 12L;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private AdbClient() {}
 
     public static final class DiscoveredPort {
@@ -79,20 +90,66 @@ public final class AdbClient {
     }
 
     public static String shell(Context context, String command) throws Exception {
+        validateShellCommand(command);
+        String marker = marker();
+        String script = ShellFraming.script(command, marker);
+        ExecutorService readerExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "qgr-adb-shell-reader");
+            thread.setDaemon(true);
+            return thread;
+        });
+
+        try (AdbStream stream = AdbConnectionManager.getInstance(context).openStream("shell:");
+             InputStream in = stream.openInputStream();
+             OutputStream out = stream.openOutputStream()) {
+            Future<String> transcriptFuture = readerExecutor.submit(() -> readUntilComplete(in, marker));
+            out.write(script.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            try {
+                String transcript = transcriptFuture.get(SHELL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                return ShellFraming.extract(transcript, marker);
+            } catch (TimeoutException e) {
+                transcriptFuture.cancel(true);
+                throw new IllegalStateException("ADB shell command timed out after " + SHELL_TIMEOUT_SECONDS + " seconds", e);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof Exception) throw (Exception) cause;
+                throw new IllegalStateException("ADB shell reader failed", cause);
+            }
+        } finally {
+            readerExecutor.shutdownNow();
+        }
+    }
+
+    private static String readUntilComplete(InputStream in, String marker) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        while (true) {
+            int read = in.read(buffer);
+            if (read < 0) break;
+            if (read == 0) continue;
+            bytes.write(buffer, 0, read);
+            if (bytes.size() > MAX_SHELL_OUTPUT_BYTES) throw new IllegalStateException("shell output exceeded 4 MiB limit");
+            String transcript = bytes.toString(StandardCharsets.UTF_8.name());
+            if (ShellFraming.isComplete(transcript, marker)) return transcript;
+        }
+        String transcript = bytes.toString(StandardCharsets.UTF_8.name());
+        if (ShellFraming.isComplete(transcript, marker)) return transcript;
+        throw new IllegalStateException("ADB shell stream closed before command completion marker");
+    }
+
+    private static void validateShellCommand(String command) {
         if (command == null || command.isEmpty()) throw new IllegalArgumentException("empty command");
         if (command.length() > MAX_SHELL_COMMAND_CHARS) throw new IllegalArgumentException("command too long for safe local ADB transport");
         if (command.indexOf('\n') >= 0 || command.indexOf('\r') >= 0 || command.indexOf('\0') >= 0) throw new IllegalArgumentException("invalid command characters");
-        try (AdbStream stream = AdbConnectionManager.getInstance(context).openStream("shell:" + command);
-             InputStream in = stream.openInputStream();
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = in.read(buffer)) >= 0) {
-                if (read > 0) out.write(buffer, 0, read);
-                if (out.size() > 4 * 1024 * 1024) throw new IllegalStateException("shell output exceeded 4 MiB limit");
-            }
-            return new String(out.toByteArray(), StandardCharsets.UTF_8).trim();
-        }
+    }
+
+    private static String marker() {
+        byte[] random = new byte[12];
+        RANDOM.nextBytes(random);
+        StringBuilder out = new StringBuilder("QGR_");
+        for (byte value : random) out.append(String.format("%02X", value & 0xff));
+        return out.toString();
     }
 
     public static void disconnect(Context context) {
