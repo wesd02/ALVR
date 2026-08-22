@@ -1,5 +1,7 @@
 package com.questhub.gamepadrepair;
 
+import java.util.Locale;
+
 public final class GamepadModeRepairPlan {
     public static final String NAMESPACE = "hzos_vendor_native";
     public static final String KEY = "oculus_emulated_gamepad";
@@ -25,6 +27,17 @@ public final class GamepadModeRepairPlan {
 
     public static String capabilityProbeCommand() {
         return listOverridesCommand();
+    }
+
+    public static boolean isCapabilityProbeSuccessful(String output) {
+        if (output == null) return false;
+        String value = output.trim().toLowerCase(Locale.ROOT);
+        return !(value.contains("invalid command")
+                || value.contains("unknown command")
+                || value.contains("unsupported command")
+                || value.contains("not supported")
+                || value.contains("usage: device_config")
+                || value.startsWith("error:"));
     }
 
     public static boolean hasTargetOverride(String output) {
