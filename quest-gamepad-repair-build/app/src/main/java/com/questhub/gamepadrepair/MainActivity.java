@@ -1,8 +1,12 @@
 package com.questhub.gamepadrepair;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -13,22 +17,27 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private TextView connectionStatus, diagnosis, log;
+    private TextView connectionStatus, diagnosis, forensic, log;
     private EditText pairingPort, pairingCode, connectionPort;
     private RepairService repairService;
+    private DeepScanService deepScanService;
     private volatile RepairService.DiagnosticReport lastReport;
+    private volatile DeepScanService.ScanReport lastForensicReport;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         repairService = new RepairService(this);
+        deepScanService = new DeepScanService(this);
         setContentView(buildUi());
-        appendLog("Quest-only v5 ready. Nothing is changed until you explicitly press a repair button.");
+        appendLog("Quest-only v6 ready. Deep Scan is read-only; nothing is changed unless you explicitly press a repair button.");
         runTask("Checking saved local ADB pairing…", () -> {
             boolean connected = AdbClient.autoConnect(this);
             setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — use the hidden-settings bootstrap above");
@@ -39,8 +48,8 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(28), dp(24), dp(28), dp(36)); root.setBackgroundColor(0xFF101416);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
-        root.addView(text("Quest Gamepad Repair v5", 30, true));
-        TextView subtitle = text("Quest-only bootstrap • hidden Android Settings • local ADB • guarded repair • rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
+        root.addView(text("Quest Gamepad Repair v6", 30, true));
+        TextView subtitle = text("Quest-only bootstrap • raw local ADB • deep rollout forensics • guarded repair • rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
 
         root.addView(sectionTitle("0 · Unlock hidden Android Settings — no PC/phone/Pi"));
         TextView hiddenHelp = text(
@@ -68,8 +77,17 @@ public final class MainActivity extends Activity {
         diagnosis = text("No diagnosis yet.", 15, false); diagnosis.setTextColor(0xFFD6E2E5); diagnosis.setTextIsSelectable(true); root.addView(diagnosis, margins(0, 10, 0, 22));
 
         root.addView(sectionTitle("3 · Repair & verify"));
-        TextView repairHelp = text("Safe Repair only touches disabled keys that contain BOTH a gamepad signal (gamepad/xbox) and a controller signal (controller/touch). Every write is read back and journaled for Restore.", 15, false); repairHelp.setTextColor(0xFFB8C6CA); root.addView(repairHelp, margins(0, 4, 0, 10));
+        TextView repairHelp = text("Safe Repair only touches disabled keys that contain BOTH a gamepad signal (gamepad/xbox) and a controller signal (controller/touch). Every write is read back and journaled for Restore. For this investigation, use Deep Scan first; do not use Experimental Repair just to hunt for a flag.", 15, false); repairHelp.setTextColor(0xFFB8C6CA); root.addView(repairHelp, margins(0, 4, 0, 10));
         LinearLayout repairButtons = row(); repairButtons.addView(button("Apply Safe Repair", v -> applySafeRepair()), weight(1)); repairButtons.addView(button("Experimental Compatibility Repair", v -> applyExperimental()), weight(1)); repairButtons.addView(button("Restore My Changes", v -> restore()), weight(1)); root.addView(repairButtons);
+
+        root.addView(sectionTitle("4 · Deep Gamepad Mode forensics — READ ONLY"), margins(0, 24, 0, 6));
+        TextView forensicHelp = text("Scans the shell-visible Horizon/Android surfaces that can explain a staged feature: properties, all Settings tables, DeviceConfig, disabled packages, package versions, overlays, Binder services, input stack, activity services/providers, scheduler, Bluetooth state, recent logs, and deep metadata for Meta/Oculus/input-related packages. Broad sources are inspected locally; unrelated personal log/settings text is not retained in the report.", 15, false);
+        forensicHelp.setTextColor(0xFFD6E2E5); root.addView(forensicHelp, margins(0, 4, 0, 10));
+        LinearLayout forensicButtons = row();
+        forensicButtons.addView(button("SCAN EVERYTHING — READ ONLY", v -> deepScan()), weight(2));
+        forensicButtons.addView(button("Save Full Report to Downloads", v -> saveLastForensicReport()), weight(1));
+        root.addView(forensicButtons);
+        forensic = text("No deep forensic scan yet.", 14, false); forensic.setTextColor(0xFFD6E2E5); forensic.setTextIsSelectable(true); forensic.setTypeface(Typeface.MONOSPACE); root.addView(forensic, margins(0, 10, 0, 20));
 
         root.addView(sectionTitle("Activity log"), margins(0, 24, 0, 6)); log = text("", 13, false); log.setTextColor(0xFFB8C6CA); log.setTypeface(Typeface.MONOSPACE); log.setTextIsSelectable(true); root.addView(log);
         return scroll;
@@ -96,6 +114,57 @@ public final class MainActivity extends Activity {
     private void applyExperimental() { runTask("Applying reversible experimental compatibility property…", () -> { appendResult("Experimental repair", repairService.applyExperimentalCompatibilityRepair()); if (AdbClient.isConnected(this)) { RepairService.DiagnosticReport verified = repairService.diagnose(); lastReport = verified; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(verified))); } }); }
     private void restore() { runTask("Restoring values recorded by this app…", () -> { appendResult("Restore", repairService.restore()); if (AdbClient.isConnected(this)) { RepairService.DiagnosticReport verified = repairService.diagnose(); lastReport = verified; runOnUiThread(() -> diagnosis.setText(renderDiagnosis(verified))); } }); }
 
+    private void deepScan() {
+        if (!AdbClient.isConnected(this)) { appendLog("Deep scan refused: connect local ADB first."); return; }
+        runTask("Starting exhaustive read-only Gamepad Mode forensic scan…", () -> {
+            DeepScanService.ScanReport report = deepScanService.scanEverything(this::appendLog);
+            lastForensicReport = report;
+            runOnUiThread(() -> forensic.setText(renderForensicSummary(report)));
+            String name = writeReportToDownloads(report.reportText);
+            appendLog("Forensic report saved to Downloads/" + name);
+        });
+    }
+
+    private void saveLastForensicReport() {
+        DeepScanService.ScanReport report = lastForensicReport;
+        if (report == null) { appendLog("Run SCAN EVERYTHING first; there is no forensic report to save yet."); return; }
+        runTask("Saving forensic report…", () -> appendLog("Forensic report saved to Downloads/" + writeReportToDownloads(report.reportText)));
+    }
+
+    private String writeReportToDownloads(String reportText) throws Exception {
+        String fileName = "QuestGamepadForensics-v6-" + System.currentTimeMillis() + ".txt";
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+        values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+        Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) throw new IllegalStateException("Android MediaStore refused to create the report file.");
+        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+            if (out == null) throw new IllegalStateException("Could not open the forensic report output stream.");
+            out.write(reportText.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        }
+        return fileName;
+    }
+
+    private String renderForensicSummary(DeepScanService.ScanReport report) {
+        StringBuilder out = new StringBuilder();
+        out.append("VERDICT: ").append(report.analysis.verdict.name()).append('\n')
+                .append(report.analysis.summary).append("\n\n")
+                .append("Sources inspected: ").append(report.scannedSources).append('\n')
+                .append("Meta/system packages deep-inspected: ").append(report.scannedPackages).append('\n')
+                .append("Gamepad code evidence: ").append(report.analysis.gamepadCodeEvidence ? "YES" : "NOT CONFIRMED").append('\n')
+                .append("Rollout infrastructure evidence: ").append(report.analysis.rolloutInfrastructureEvidence ? "YES" : "NOT CONFIRMED").append("\n\n")
+                .append("Top evidence:\n");
+        int shown = 0;
+        for (String hit : report.analysis.highValueHits) {
+            out.append("• ").append(hit).append('\n');
+            if (++shown >= 40) { out.append("… full privacy-filtered evidence is in the Downloads report.\n"); break; }
+        }
+        if (shown == 0) out.append("• No high-value keyword-correlated lines found.\n");
+        return out.toString();
+    }
+
     private String renderDiagnosis(RepairService.DiagnosticReport r) {
         StringBuilder out = new StringBuilder(); out.append("Build: ").append(empty(r.build)).append('\n').append("Android: ").append(empty(r.androidRelease)).append('\n').append("ADB identity: ").append(empty(r.identity)).append('\n').append("Shell UID verified: ").append(r.shellUid ? "YES" : "NO").append('\n').append("debug.oculus.experimentalEnabled: ").append(r.experimentalValue.isEmpty() ? "<unset>" : r.experimentalValue).append("\n\nSafe proposed changes:\n");
         if (r.plan.isEmpty()) out.append("  None. The APK will not invent a Meta flag.\n");
@@ -106,7 +175,7 @@ public final class MainActivity extends Activity {
     private void appendResult(String label, RepairService.RepairResult result) { appendLog(label + ": " + (result.success ? "verified" : "not fully verified") + ", changed/restored=" + result.changed); for (String message : result.messages) appendLog("  " + message); }
     private void runTask(String label, ThrowingTask task) { appendLog(label); worker.execute(() -> { try { task.run(); } catch (Throwable t) { appendLog("Error: " + sanitizeError(t)); } }); }
     private void setConnectionStatus(String value) { runOnUiThread(() -> connectionStatus.setText("Connection: " + value)); appendLog("Connection: " + value); }
-    private void appendLog(String message) { String safe = message == null ? "" : message.replaceAll("(?<![0-9])[0-9]{6}(?![0-9])", "******"); runOnUiThread(() -> { if (log == null) return; String current = log.getText().toString(); String next = current.isEmpty() ? safe : current + "\n" + safe; if (next.length() > 18_000) next = next.substring(next.length() - 18_000); log.setText(next); }); }
+    private void appendLog(String message) { String safe = message == null ? "" : message.replaceAll("(?<![0-9])[0-9]{6}(?![0-9])", "******"); runOnUiThread(() -> { if (log == null) return; String current = log.getText().toString(); String next = current.isEmpty() ? safe : current + "\n" + safe; if (next.length() > 24_000) next = next.substring(next.length() - 24_000); log.setText(next); }); }
     private static String sanitizeError(Throwable t) { String message = t.getMessage(); if (message == null || message.trim().isEmpty()) message = t.getClass().getSimpleName(); message = message.replace('\n', ' ').replace('\r', ' ').replaceAll("(?<![0-9])[0-9]{6}(?![0-9])", "******").trim(); return message.length() > 240 ? message.substring(0, 240) : message; }
     private int parsePort(String raw) { int value = Integer.parseInt(raw.trim()); if (value <= 0 || value > 65535) throw new IllegalArgumentException("port"); return value; }
     private TextView sectionTitle(String value) { TextView view = text(value, 20, true); view.setTextColor(0xFF80CBC4); return view; }
