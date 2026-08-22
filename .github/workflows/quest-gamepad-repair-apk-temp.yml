@@ -1,0 +1,55 @@
+name: Temporary Quest Gamepad Repair APK Build
+
+on:
+  push:
+    branches:
+      - 'ci/quest-gamepad-repair-apk-20260821'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: quest-gamepad-repair-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager="$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -print 2>/dev/null | sort -V | tail -n1)"
+          test -n "$sdkmanager" && test -x "$sdkmanager"
+          yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - name: Unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace --no-daemon
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - name: Stage APK and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          cp app/build/outputs/apk/debug/app-debug.apk artifact/QuestGamepadRepair-debug.apk
+          (cd artifact && sha256sum QuestGamepadRepair-debug.apk > QuestGamepadRepair-debug.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Quest-Gamepad-Repair-APK
+          path: |
+            quest-gamepad-repair-build/artifact/QuestGamepadRepair-debug.apk
+            quest-gamepad-repair-build/artifact/QuestGamepadRepair-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 7
