@@ -28,6 +28,29 @@ public final class ShellFramingTest {
         assertEquals("uid=2000(shell) gid=2000(shell)", ShellFraming.extract(transcript, marker));
     }
 
+    @Test
+    public void ignoresMarkersInsideEchoedPrintfCommands() {
+        String marker = "QGR_ABC123";
+        String begin = ShellFraming.begin(marker);
+        String end = ShellFraming.end(marker);
+        String echoedPrefix = "quest:/ $ stty -echo 2>/dev/null\r\n"
+                + "quest:/ $ printf '" + begin + "\\n'\r\n"
+                + "quest:/ $ id\r\n"
+                + "quest:/ $ printf '\\n" + end + "\\n'\r\n"
+                + "quest:/ $ exit\r\n";
+
+        assertFalse("an echoed printf command is not command completion",
+                ShellFraming.isComplete(echoedPrefix, marker));
+
+        String actualTranscript = echoedPrefix
+                + begin + "\r\n"
+                + "uid=2000(shell) gid=2000(shell) groups=1003(graphics)\r\n"
+                + end + "\r\n";
+        assertTrue(ShellFraming.isComplete(actualTranscript, marker));
+        assertEquals("uid=2000(shell) gid=2000(shell) groups=1003(graphics)",
+                ShellFraming.extract(actualTranscript, marker));
+    }
+
     @Test(expected = IllegalStateException.class)
     public void missingEndMarkerIsRejected() {
         String marker = "QGR_ABC123";
