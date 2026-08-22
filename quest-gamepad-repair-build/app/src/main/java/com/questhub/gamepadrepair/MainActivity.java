@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         repairService = new RepairService(this);
         setContentView(buildUi());
-        appendLog("Quest-only v4 ready. Nothing is changed until you explicitly press a repair button.");
+        appendLog("Quest-only v5 ready. Nothing is changed until you explicitly press a repair button.");
         runTask("Checking saved local ADB pairing…", () -> {
             boolean connected = AdbClient.autoConnect(this);
             setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — use the hidden-settings bootstrap above");
@@ -39,7 +39,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(28), dp(24), dp(28), dp(36)); root.setBackgroundColor(0xFF101416);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
-        root.addView(text("Quest Gamepad Repair v4", 30, true));
+        root.addView(text("Quest Gamepad Repair v5", 30, true));
         TextView subtitle = text("Quest-only bootstrap • hidden Android Settings • local ADB • guarded repair • rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
 
         root.addView(sectionTitle("0 · Unlock hidden Android Settings — no PC/phone/Pi"));
