@@ -5,9 +5,13 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <queries>
+        <package android:name="com.android.settings" />
+    </queries>
+
     <application
         android:allowBackup="false"
-        android:label="Quest Gamepad Repair"
+        android:label="Quest Gamepad Repair v2"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
         <activity
