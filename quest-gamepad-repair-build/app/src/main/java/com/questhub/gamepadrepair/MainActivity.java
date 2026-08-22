@@ -35,9 +35,9 @@ public final class MainActivity extends Activity {
         gamepadRepair = new GamepadModeRepairService(this);
         activationTrace = new ActivationTraceService(this);
         setContentView(buildUi());
-        appendLog("Quest Gamepad Sticky Fix v8 ready.");
-        appendLog("v7 proved the normal DeviceConfig value can be changed, but boot restored the rollout value false.");
-        appendLog("v8 uses only Android's per-flag local sticky override and adds read-only activation evidence capture.");
+        appendLog("Quest Gamepad Sticky Fix v9 ready.");
+        appendLog("v8 falsely treated missing help text as proof that sticky overrides were unavailable.");
+        appendLog("v9 directly executes the read-only list_local_overrides probe. Only a real successful probe can unlock the one-flag write.");
         runTask("Checking saved local ADB pairing…", () -> {
             boolean connected = AdbClient.autoConnect(this);
             setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — pair Wireless Debugging below");
@@ -51,13 +51,14 @@ public final class MainActivity extends Activity {
         root.setPadding(dp(28), dp(24), dp(28), dp(36)); root.setBackgroundColor(0xFF101416);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
 
-        root.addView(text("Quest Gamepad Sticky Fix v8", 30, true));
-        TextView subtitle = text("Quest-only • one sticky DeviceConfig override • reboot verification • activation trace", 16, false);
+        root.addView(text("Quest Gamepad Sticky Fix v9", 30, true));
+        TextView subtitle = text("Quest-only • direct capability probe • one sticky override • verified rollback • activation trace", 16, false);
         subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 18));
 
         TextView target = text(
                 "Target only: hzos_vendor_native/oculus_emulated_gamepad = true\n" +
-                "Method: device_config override (local sticky override)\n" +
+                "Probe: device_config list_local_overrides (READ ONLY)\n" +
+                "Write only if probe really succeeds: device_config override\n" +
                 "Rollback: clear_override for this one key\n" +
                 "NEVER changes the kill-switch and NEVER disables DeviceConfig sync globally.",
                 16, true);
@@ -65,7 +66,7 @@ public final class MainActivity extends Activity {
 
         root.addView(sectionTitle("1 · Wireless Debugging bootstrap"));
         TextView help = text(
-                "v8 has a new app identity, so pair it once. Open Android Settings App Info → Open → System → Developer Options → Wireless Debugging → Pair device with pairing code. Keep the pairing panel open while scanning.",
+                "v9 installs as an update over v8, so your existing pairing may remain usable. If it does not connect: open Android Settings App Info → Open → System → Developer Options → Wireless Debugging → Pair device with pairing code.",
                 15, false);
         help.setTextColor(0xFFD6E2E5); root.addView(help, margins(0, 4, 0, 10));
 
@@ -90,25 +91,25 @@ public final class MainActivity extends Activity {
         connectionStatus = text("Connection: checking…", 17, true); connectionStatus.setTextColor(0xFF80CBC4);
         root.addView(connectionStatus, margins(0, 10, 0, 22));
 
-        root.addView(sectionTitle("2 · Current Gamepad state"));
+        root.addView(sectionTitle("2 · Direct override probe + current state"));
         flagStatus = text("Effective flag: not read yet", 18, true); flagStatus.setTextColor(0xFFF4F7F8); flagStatus.setTextIsSelectable(true);
         overrideStatus = text("Sticky override: not checked yet", 16, true); overrideStatus.setTextColor(0xFFB8C6CA); overrideStatus.setTextIsSelectable(true);
         root.addView(flagStatus, margins(0, 6, 0, 6));
         root.addView(overrideStatus, margins(0, 0, 0, 8));
-        root.addView(button("Check Flag + Sticky Override", v -> checkState()), margins(0, 0, 0, 22));
+        root.addView(button("Check Flag + DIRECT Override Probe", v -> checkState()), margins(0, 0, 0, 22));
 
         root.addView(sectionTitle("3 · Install reboot-persistent override"));
         TextView safety = text(
-                "v8 first checks that this headset advertises override / clear_override / list_local_overrides. It then creates only the Gamepad flag override, verifies that the override is listed, and verifies the effective flag reads true. Any failed verification triggers a clear_override attempt.",
+                "v9 does NOT trust device_config help. It executes list_local_overrides directly. Empty output is a valid successful result meaning no overrides are listed. A timeout, invalid/unknown/unsupported-command response, or other command failure blocks the write. Only after that probe succeeds will v9 attempt the single Gamepad override and verify both the override list and effective value.",
                 15, false);
         safety.setTextColor(0xFFD6E2E5); root.addView(safety, margins(0, 4, 0, 10));
-        Button enable = button("INSTALL STICKY GAMEPAD OVERRIDE", v -> enableGamepadMode());
+        Button enable = button("DIRECT PROBE + INSTALL ONE-FLAG OVERRIDE", v -> enableGamepadMode());
         enable.setTextSize(18); enable.setMinHeight(dp(68)); root.addView(enable, margins(0, 0, 0, 8));
-        root.addView(button("CLEAR v8 STICKY OVERRIDE", v -> restoreGamepadMode()), margins(0, 0, 0, 18));
+        root.addView(button("CLEAR v9 STICKY OVERRIDE", v -> restoreGamepadMode()), margins(0, 0, 0, 18));
 
         root.addView(sectionTitle("4 · Test the Meta + Menu activation path"));
         TextView activationHelp = text(
-                "After v8 says the sticky override is VERIFIED and the effective flag is true: press Meta + Menu together once. If nothing changes, immediately tap Capture Activation Evidence. v8 will inspect recent input/System Shell evidence and save a read-only report to Downloads. Then restart once, reconnect, and Check Flag + Sticky Override again to prove whether the override survived boot.",
+                "If v9 actually verifies a sticky override and effective=true, restart once. After boot, re-check the direct probe and flag. Then check Settings → Devices → Controllers and press Meta + Menu once. If nothing changes, capture activation evidence immediately.",
                 15, false);
         activationHelp.setTextColor(0xFFFFCC80); root.addView(activationHelp, margins(0, 4, 0, 10));
         root.addView(button("CAPTURE ACTIVATION EVIDENCE — READ ONLY", v -> captureActivationEvidence()), margins(0, 0, 0, 22));
@@ -175,13 +176,14 @@ public final class MainActivity extends Activity {
 
     private void checkState() {
         if (!AdbClient.isConnected(this)) { appendLog("Connect local ADB first."); return; }
-        runTask("Reading Gamepad flag and local overrides…", this::refreshState);
+        runTask("Running direct list_local_overrides probe and reading Gamepad flag…", this::refreshState);
     }
 
     private void refreshState() throws Exception {
         String value = gamepadRepair.readCurrentValue();
         boolean override = gamepadRepair.isTargetOverridePresent();
         updateStateUi(value, override);
+        appendLog("Direct list_local_overrides probe: VERIFIED");
         appendLog("Effective Gamepad flag = " + printable(value));
         appendLog("Target sticky override present = " + override);
     }
@@ -197,19 +199,19 @@ public final class MainActivity extends Activity {
 
     private void enableGamepadMode() {
         if (!AdbClient.isConnected(this)) { appendLog("Enable refused: connect local ADB first."); return; }
-        runTask("Installing one-flag sticky Gamepad override…", () -> {
+        runTask("Direct-probing and attempting one-flag sticky Gamepad override…", () -> {
             GamepadModeRepairService.Result result = gamepadRepair.enable();
             appendResult("Sticky enable", result);
             updateStateUi(result.observedValue, result.overridePresent);
             if (result.success && result.overridePresent && "true".equalsIgnoreCase(result.observedValue)) {
-                appendLog("STICKY OVERRIDE VERIFIED TRUE. Press Meta + Menu once. If nothing happens, capture activation evidence.");
+                appendLog("STICKY OVERRIDE VERIFIED TRUE. Restart once, re-check v9, then test Settings and Meta + Menu.");
             }
         });
     }
 
     private void restoreGamepadMode() {
         if (!AdbClient.isConnected(this)) { appendLog("Clear refused: connect local ADB first."); return; }
-        runTask("Clearing only the v8 Gamepad sticky override…", () -> {
+        runTask("Clearing only the v9 Gamepad sticky override…", () -> {
             GamepadModeRepairService.Result result = gamepadRepair.restore();
             appendResult("Clear override", result);
             updateStateUi(result.observedValue, result.overridePresent);
@@ -229,7 +231,7 @@ public final class MainActivity extends Activity {
     }
 
     private String saveReport(String report) throws Exception {
-        String name = "QuestGamepadActivation-v8-" + System.currentTimeMillis() + ".txt";
+        String name = "QuestGamepadActivation-v9-" + System.currentTimeMillis() + ".txt";
         ContentValues values = new ContentValues();
         values.put(MediaStore.Downloads.DISPLAY_NAME, name);
         values.put(MediaStore.Downloads.MIME_TYPE, "text/plain");
