@@ -28,10 +28,10 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         repairService = new RepairService(this);
         setContentView(buildUi());
-        appendLog("Ready. Nothing is changed until you explicitly press a repair button.");
-        runTask("Checking saved ADB pairing…", () -> {
+        appendLog("Quest-only v2 ready. Nothing is changed until you explicitly press a repair button.");
+        runTask("Checking saved local ADB pairing…", () -> {
             boolean connected = AdbClient.autoConnect(this);
-            setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — pair Wireless Debugging below");
+            setConnectionStatus(connected ? "Connected to local ADB shell" : "Not connected — use the hidden-settings bootstrap above");
         });
     }
 
@@ -39,24 +39,50 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(28), dp(24), dp(28), dp(36)); root.setBackgroundColor(0xFF101416);
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
-        root.addView(text("Quest Gamepad Repair", 30, true));
-        TextView subtitle = text("Horizon OS 2.7 • local ADB diagnosis, guarded repair, verification, rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
+        root.addView(text("Quest Gamepad Repair v2", 30, true));
+        TextView subtitle = text("Quest-only bootstrap • hidden Android Settings • local ADB • guarded repair • rollback", 16, false); subtitle.setTextColor(0xFFB8C6CA); root.addView(subtitle, margins(0, 4, 0, 22));
+
+        root.addView(sectionTitle("0 · Unlock hidden Android Settings — no PC/phone/Pi"));
+        TextView hiddenHelp = text(
+                "Start with Hidden Android Settings. If it opens: About Headset → tap Build Number 7 times → back → System → Developer Options → Wireless Debugging. Meta may block the direct Developer/Wireless buttons, so App Info is included as another escape hatch: if Android Settings App Info opens, press Open.",
+                16, false);
+        hiddenHelp.setTextColor(0xFFD6E2E5); root.addView(hiddenHelp, margins(0, 4, 0, 12));
+        LinearLayout hiddenRow1 = row();
+        hiddenRow1.addView(button("Open Hidden Android Settings", v -> launchSettings(SettingsRoutePlanner.Kind.HIDDEN_SETTINGS_ROOT)), weight(1));
+        hiddenRow1.addView(button("Open About Headset", v -> launchSettings(SettingsRoutePlanner.Kind.ABOUT_HEADSET)), weight(1));
+        root.addView(hiddenRow1);
+        LinearLayout hiddenRow2 = row();
+        hiddenRow2.addView(button("Open Developer Options", v -> launchSettings(SettingsRoutePlanner.Kind.DEVELOPER_OPTIONS)), weight(1));
+        hiddenRow2.addView(button("Open Wireless Debugging", v -> launchSettings(SettingsRoutePlanner.Kind.WIRELESS_DEBUGGING)), weight(1));
+        hiddenRow2.addView(button("Android Settings App Info", v -> launchSettings(SettingsRoutePlanner.Kind.SETTINGS_APP_INFO)), weight(1));
+        root.addView(hiddenRow2, margins(0, 6, 0, 20));
+
         root.addView(sectionTitle("1 · Pair local Wireless Debugging"));
-        TextView pairingHelp = text("On the Quest, manually open Settings → System → Developer Options → Wireless Debugging → Pair device with pairing code. Keep that pairing-code panel open, then press Scan Pairing Port here.", 16, false); pairingHelp.setTextColor(0xFFD6E2E5); root.addView(pairingHelp, margins(0, 4, 0, 12));
+        TextView pairingHelp = text("After you reach hidden Android Developer Options, open Wireless Debugging → Pair device with pairing code. Keep that pairing-code panel open, return here, then press Scan Pairing Port.", 16, false); pairingHelp.setTextColor(0xFFD6E2E5); root.addView(pairingHelp, margins(0, 4, 0, 12));
         LinearLayout pairRow = row(); pairingPort = numberField("Pairing port", 5); pairingCode = numberField("6-digit code", 6); pairRow.addView(pairingPort, weight(1)); pairRow.addView(pairingCode, weight(1)); root.addView(pairRow);
         LinearLayout pairButtons = row(); pairButtons.addView(button("Scan Pairing Port", v -> scanPairingPort()), weight(1)); pairButtons.addView(button("Pair & Connect", v -> pairAndConnect()), weight(1)); root.addView(pairButtons, margins(0, 8, 0, 8));
         LinearLayout connectRow = row(); connectionPort = numberField("Manual ADB port (optional)", 5); connectRow.addView(connectionPort, weight(1)); connectRow.addView(button("Auto Connect", v -> autoConnect()), weight(1)); connectRow.addView(button("Connect Port", v -> manualConnect()), weight(1)); root.addView(connectRow);
         connectionStatus = text("Connection: checking…", 17, true); connectionStatus.setTextColor(0xFF80CBC4); root.addView(connectionStatus, margins(0, 10, 0, 22));
+
         root.addView(sectionTitle("2 · Diagnose before changing anything")); root.addView(button("Diagnose Horizon Controller Settings", v -> diagnose()));
         diagnosis = text("No diagnosis yet.", 15, false); diagnosis.setTextColor(0xFFD6E2E5); diagnosis.setTextIsSelectable(true); root.addView(diagnosis, margins(0, 10, 0, 22));
+
         root.addView(sectionTitle("3 · Repair & verify"));
         TextView repairHelp = text("Safe Repair only touches disabled keys that contain BOTH a gamepad signal (gamepad/xbox) and a controller signal (controller/touch). Every write is read back and journaled for Restore.", 15, false); repairHelp.setTextColor(0xFFB8C6CA); root.addView(repairHelp, margins(0, 4, 0, 10));
         LinearLayout repairButtons = row(); repairButtons.addView(button("Apply Safe Repair", v -> applySafeRepair()), weight(1)); repairButtons.addView(button("Experimental Compatibility Repair", v -> applyExperimental()), weight(1)); repairButtons.addView(button("Restore My Changes", v -> restore()), weight(1)); root.addView(repairButtons);
+
         root.addView(sectionTitle("Activity log"), margins(0, 24, 0, 6)); log = text("", 13, false); log.setTextColor(0xFFB8C6CA); log.setTypeface(Typeface.MONOSPACE); log.setTextIsSelectable(true); root.addView(log);
         return scroll;
     }
 
-    private void scanPairingPort() { runTask("Scanning local pairing service…", () -> { AdbClient.DiscoveredPort found = AdbClient.discoverPairingPort(this, 20_000L); if (found.port <= 0) throw new IllegalStateException("No pairing port found. Keep the Quest pairing-code panel open and try again."); runOnUiThread(() -> pairingPort.setText(String.valueOf(found.port))); appendLog("Pairing service found on port " + found.port + "."); }); }
+    private void launchSettings(SettingsRoutePlanner.Kind kind) {
+        HiddenSettingsLauncher.LaunchResult result = HiddenSettingsLauncher.launch(this, kind);
+        for (String attempt : result.attempts) appendLog("Settings route: " + attempt);
+        if (result.launched) appendLog("Opened route: " + result.routeLabel + ". " + result.message);
+        else appendLog("All direct routes were blocked. " + result.message);
+    }
+
+    private void scanPairingPort() { runTask("Scanning local pairing service…", () -> { AdbClient.DiscoveredPort found = AdbClient.discoverPairingPort(this, 20_000L); if (found.port <= 0) throw new IllegalStateException("No pairing port found. Keep the hidden Android pairing-code panel open and try again."); runOnUiThread(() -> pairingPort.setText(String.valueOf(found.port))); appendLog("Pairing service found on port " + found.port + "."); }); }
     private void pairAndConnect() {
         final int port; try { port = parsePort(pairingPort.getText().toString()); } catch (Exception e) { appendLog("Pairing port is invalid."); return; }
         final String code = pairingCode.getText().toString().trim(); pairingCode.setText("");
