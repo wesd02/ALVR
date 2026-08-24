@@ -1,0 +1,101 @@
+name: QuestHub Android Toolchain Cache Courier
+
+on:
+  push:
+    paths:
+      - '.github/workflows/questhub-android-toolchain-cache.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Install exact Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager="$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -print 2>/dev/null | sort -V | tail -n1)"
+          test -n "$sdkmanager" && test -x "$sdkmanager"
+          yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Warm exact QuestHub Android dependencies without private source
+        shell: bash
+        run: |
+          set -euo pipefail
+          warm="$RUNNER_TEMP/qh-warm"
+          mkdir -p "$warm/app/src/main/java/example"
+          cat > "$warm/settings.gradle" <<'EOF'
+          pluginManagement {
+            repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
+          }
+          rootProject.name = 'QuestHubDependencyWarm'
+          include ':app'
+          EOF
+          cat > "$warm/build.gradle" <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          EOF
+          cat > "$warm/app/build.gradle" <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+            namespace 'example.cache'
+            compileSdk 35
+            defaultConfig { applicationId 'example.cache'; minSdk 29; targetSdk 35; versionCode 1; versionName '1' }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+          }
+          dependencies {
+            implementation 'com.github.MuntashirAkon:libadb-android:3.1.1'
+            implementation 'com.github.MuntashirAkon:sun-security-android:1.1'
+            implementation 'org.conscrypt:conscrypt-android:2.5.3'
+            testImplementation 'junit:junit:4.13.2'
+          }
+          EOF
+          cat > "$warm/app/src/main/AndroidManifest.xml" <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:theme="@android:style/Theme.DeviceDefault" /></manifest>
+          EOF
+          cd "$warm"
+          gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Package offline toolchain and dependency cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$RUNNER_TEMP/qh-toolchain"
+          mkdir -p "$payload/android-sdk/platforms" "$payload/android-sdk/build-tools" "$payload/android-sdk/platform-tools" "$payload/gradle-home"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          cp -a "$sdk_root/platforms/android-35" "$payload/android-sdk/platforms/"
+          cp -a "$sdk_root/build-tools/35.0.0" "$payload/android-sdk/build-tools/"
+          cp -a "$sdk_root/platform-tools/." "$payload/android-sdk/platform-tools/"
+          cp -a "$HOME/.gradle/caches" "$payload/gradle-home/"
+          cp -a "$HOME/.gradle/notifications" "$payload/gradle-home/" 2>/dev/null || true
+          curl -fL --retry 3 -o "$payload/gradle-8.11.1-bin.zip" https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+          printf '%s\n' 'QuestHub private source was NOT present on this runner.' > "$payload/README.txt"
+          du -sh "$payload"/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: questhub-android-offline-toolchain
+          path: ${{ runner.temp }}/qh-toolchain
+          compression-level: 6
+          retention-days: 1
+          if-no-files-found: error
