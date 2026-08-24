@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - '.github/workflows/questhub-android-toolchain-cache.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/questhub-android-toolchain-cache.yml'
   workflow_dispatch:
 
 permissions:
