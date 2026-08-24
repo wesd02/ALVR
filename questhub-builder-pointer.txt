@@ -1,0 +1,2 @@
+Temporary QuestHub Android builder probe pointer only. No QuestHub source or credentials.
+https://questhub-android-builder-probe4-4cg83644e.vercel.app/info.txt
