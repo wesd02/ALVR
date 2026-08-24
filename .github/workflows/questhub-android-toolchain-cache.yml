@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - '.github/workflows/questhub-android-toolchain-cache.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/questhub-android-toolchain-cache.yml'
   workflow_dispatch:
 
 permissions:
@@ -99,3 +102,5 @@ jobs:
           compression-level: 6
           retention-days: 1
           if-no-files-found: error
+
+# PR-trigger nonce: 2026-08-24T11:52-04:00
