@@ -1,0 +1,70 @@
+name: QuestPad 0.8.0 RC1 CI
+
+on:
+  push:
+    branches: [questpad-ci-080]
+  workflow_dispatch:
+
+jobs:
+  build-questpad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact QuestPad source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/questpad-src
+          cp questpad-ci/QuestPad-v0.8.0-RC1-SOURCE.zip /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip
+          echo "8175ebe60081c65c8fc1de2a509d82b72b6e1fb5823ec9c12aca688ea86e0eea  /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip" | sha256sum -c -
+          unzip -q /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip -d /tmp/questpad-src
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 | head -1)"
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;35.0.0"
+
+      - name: Test and build debug + unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/questpad-src
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEBUG_APK=/tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk
+          RELEASE_APK=/tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$DEBUG_APK"
+          test -f "$RELEASE_APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "package: name='com.dearformerself.questpad'" /tmp/release-badging.txt
+          grep -q "versionName='0.8.0-rc1'" /tmp/release-badging.txt
+          unzip -l "$RELEASE_APK" > /tmp/apk-list.txt
+          ! grep -q "libquestpad_engine.so" /tmp/apk-list.txt
+          ! grep -q "questpad_vrshell_lease.dex" /tmp/apk-list.txt
+          sha256sum "$DEBUG_APK" "$RELEASE_APK" | tee /tmp/apk-sha256.txt
+
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestPad-v0.8.0-RC1-builds
+          path: |
+            /tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk
+            /tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/apk-sha256.txt
+            /tmp/debug-badging.txt
+            /tmp/release-badging.txt
