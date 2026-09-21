@@ -29,7 +29,7 @@ jobs:
           RC=$?
           if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
           sha256sum /tmp/QuestPad-v0.7.6-fixed-source.zip
-          echo "ab0cf23042133082db6f397668472eaeb2b2ee9c62994febc33967c98f27a80e  /tmp/QuestPad-v0.7.6-fixed-source.zip" | sha256sum -c -
+          echo "83e904a19eb2682810f8b6ac8e43207098e6345070450a1a83c8ac6b22d81e5a  /tmp/QuestPad-v0.7.6-fixed-source.zip" | sha256sum -c -
           RC=$?
           if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
           mkdir -p /tmp/questpad-src
