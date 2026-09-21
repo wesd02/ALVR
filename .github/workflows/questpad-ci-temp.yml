@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore, test, and build QuestPad
+      - name: Restore, patch, test, and build QuestPad
         shell: bash
         run: |
           set +e
@@ -38,6 +38,20 @@ jobs:
           if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
 
           if [ $EXIT_CODE -eq 0 ]; then
+            echo "=== Apply verified Spatial SDK 0.13.2 cursor API correction ==="
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path("/tmp/questpad-src/app/src/main/java/com/dearformerself/questinputlab/QuestInputLabActivity.kt")
+          s = p.read_text()
+          old = "systemManager.findSystem<IsdkDefaultCursorSystem>().active = !controllerRoutingEnabled"
+          new = "systemManager.findSystem<IsdkDefaultCursorSystem>().enableInput(!controllerRoutingEnabled)"
+          if old not in s:
+              raise SystemExit("Expected cursor suppression line not found")
+          p.write_text(s.replace(old, new))
+          PY
+          fi
+
+          if [ $EXIT_CODE -eq 0 ]; then
             echo "=== Android SDK ==="
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
             if [ ! -x "$SDKMANAGER" ]; then
@@ -51,8 +65,6 @@ jobs:
               if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
             else
               echo "sdkmanager not found; checking whether API 34 is already installed."
-              ls -la "$ANDROID_HOME/platforms" || true
-              ls -la "$ANDROID_HOME/build-tools" || true
               if [ ! -f "$ANDROID_HOME/platforms/android-34/android.jar" ]; then
                 EXIT_CODE=127
               fi
