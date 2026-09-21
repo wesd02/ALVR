@@ -1,4 +1,4 @@
-name: QuestPad 0.8.0 RC1 CI
+name: QuestPad 0.8.0 RC2 CI
 
 on:
   push:
@@ -17,9 +17,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/questpad-src
-          cp questpad-ci/QuestPad-v0.8.0-RC1-SOURCE.zip /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip
-          echo "8175ebe60081c65c8fc1de2a509d82b72b6e1fb5823ec9c12aca688ea86e0eea  /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip" | sha256sum -c -
-          unzip -q /tmp/QuestPad-v0.8.0-RC1-SOURCE.zip -d /tmp/questpad-src
+          cp questpad-ci/QuestPad-v0.8.0-RC2-SOURCE.zip /tmp/QuestPad-v0.8.0-RC2-SOURCE.zip
+          echo "c12ea12c9241fffb5f698b053496554d4553b512f6b6828dfcc480768152d77a  /tmp/QuestPad-v0.8.0-RC2-SOURCE.zip" | sha256sum -c -
+          unzip -q /tmp/QuestPad-v0.8.0-RC2-SOURCE.zip -d /tmp/questpad-src
 
       - name: Prepare Android SDK
         shell: bash
@@ -52,7 +52,7 @@ jobs:
           "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
           "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
           grep -q "package: name='com.dearformerself.questpad'" /tmp/release-badging.txt
-          grep -q "versionName='0.8.0-rc1'" /tmp/release-badging.txt
+          grep -q "versionName='0.8.0-rc2'" /tmp/release-badging.txt
           unzip -l "$RELEASE_APK" > /tmp/apk-list.txt
           ! grep -q "libquestpad_engine.so" /tmp/apk-list.txt
           ! grep -q "questpad_vrshell_lease.dex" /tmp/apk-list.txt
@@ -61,7 +61,7 @@ jobs:
       - name: Upload build outputs
         uses: actions/upload-artifact@v4
         with:
-          name: QuestPad-v0.8.0-RC1-builds
+          name: QuestPad-v0.8.0-RC2-builds
           path: |
             /tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk
             /tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
