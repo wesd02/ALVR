@@ -53,6 +53,9 @@ jobs:
           ! grep -q "libquestpad_engine.so" /tmp/rc3-files.txt
           ! grep -q "questpad_vrshell_lease.dex" /tmp/rc3-files.txt
           sha256sum "$APK" > /tmp/rc3-unsigned.sha256
+          ALIGNED=/tmp/QuestPad-v0.8.0-RC3-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$APK" "$ALIGNED"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 "$ALIGNED" | tee /tmp/rc3-zipalign.txt
       - name: Export Android signing tools
         shell: bash
         run: |
@@ -67,6 +70,8 @@ jobs:
           name: QuestPad-v0.8.0-RC3-unsigned
           path: |
             /tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/QuestPad-v0.8.0-RC3-aligned-unsigned.apk
+            /tmp/rc3-zipalign.txt
             /tmp/rc3-badging.txt
             /tmp/rc3-unsigned.sha256
             /tmp/android-sign-tools/apksigner-35.0.0.jar
