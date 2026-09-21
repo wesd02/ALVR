@@ -1,0 +1,71 @@
+name: QuestPad RC3 unsigned build
+
+on:
+  push:
+    branches: [questpad-ci-rc3]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore exact RC3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/questpad-src
+          mkdir -p /tmp/questpad-src
+          cp questpad-ci/QuestPad-v0.8.0-RC3-SOURCE.zip /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip
+          echo "5c604d58d8fd4960530a5fd6f01cd59a14316cc784a41e9b68e258b0d121d3c2  /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip" | sha256sum -c -
+          unzip -q /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip -d /tmp/questpad-src
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 | head -1)"
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;35.0.0"
+      - name: Test and build RC3
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/questpad-src
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleRelease --stacktrace
+      - name: Verify unsigned package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -f "$APK"
+          "$AAPT" dump badging "$APK" | tee /tmp/rc3-badging.txt
+          grep -q "package: name='com.cornerofweird.questpad'" /tmp/rc3-badging.txt
+          grep -q "versionName='0.8.0-rc3'" /tmp/rc3-badging.txt
+          unzip -l "$APK" > /tmp/rc3-files.txt
+          ! grep -q "libquestpad_engine.so" /tmp/rc3-files.txt
+          ! grep -q "questpad_vrshell_lease.dex" /tmp/rc3-files.txt
+          sha256sum "$APK" > /tmp/rc3-unsigned.sha256
+      - name: Export Android signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/android-sign-tools
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-sign-tools/apksigner-35.0.0.jar
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/android-sign-tools/zipalign-35.0.0
+          chmod +x /tmp/android-sign-tools/zipalign-35.0.0
+      - name: Upload RC3 unsigned build and signing tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestPad-v0.8.0-RC3-unsigned
+          path: |
+            /tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/rc3-badging.txt
+            /tmp/rc3-unsigned.sha256
+            /tmp/android-sign-tools/apksigner-35.0.0.jar
+            /tmp/android-sign-tools/zipalign-35.0.0
