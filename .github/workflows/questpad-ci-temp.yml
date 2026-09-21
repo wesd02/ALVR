@@ -1,4 +1,4 @@
-name: Temporary QuestPad 0.7.6 CI
+name: Temporary QuestPad 0.7.7 CI
 
 on:
   push:
@@ -25,15 +25,15 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
 
           echo "=== Restore source ==="
-          base64 -d questpad-ci/questpad-source.b64 > /tmp/QuestPad-v0.7.6-fixed-source.zip
+          base64 -d questpad-ci/questpad-source.b64 > /tmp/QuestPad-v0.7.7-fixed-source.zip
           RC=$?
           if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
-          sha256sum /tmp/QuestPad-v0.7.6-fixed-source.zip
-          echo "83e904a19eb2682810f8b6ac8e43207098e6345070450a1a83c8ac6b22d81e5a  /tmp/QuestPad-v0.7.6-fixed-source.zip" | sha256sum -c -
+          sha256sum /tmp/QuestPad-v0.7.7-fixed-source.zip
+          echo "8269e1cfbacc33b0f237b7b3659c72b006b74b40a7a97ad8b3fbb0c10734ca9a  /tmp/QuestPad-v0.7.7-fixed-source.zip" | sha256sum -c -
           RC=$?
           if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
           mkdir -p /tmp/questpad-src
-          unzip -q -o /tmp/QuestPad-v0.7.6-fixed-source.zip -d /tmp/questpad-src
+          unzip -q -o /tmp/QuestPad-v0.7.7-fixed-source.zip -d /tmp/questpad-src
           RC=$?
           if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
 
@@ -93,7 +93,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: QuestPad-v0.7.6-DIAGNOSTICS
+          name: QuestPad-v0.7.7-DIAGNOSTICS
           path: |
             /tmp/questpad-ci.log
             /tmp/build.exit
@@ -104,7 +104,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: QuestPad-v0.7.6-FIXED
+          name: QuestPad-v0.7.7-FIXED
           path: /tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: ignore
 
