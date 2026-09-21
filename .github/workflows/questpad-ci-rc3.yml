@@ -18,7 +18,7 @@ jobs:
           rm -rf /tmp/questpad-src
           mkdir -p /tmp/questpad-src
           cp questpad-ci/QuestPad-v0.8.0-RC3-SOURCE.zip /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip
-          echo "13145a45cf7febcf05603aae10312e2901deb0711d493087291e94d98e9635f6  /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip" | sha256sum -c -
+          echo "9aa6c49643ad911c628f10f4d3338ceab2c71f3aa504230153b6f4c192a940ad  /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip" | sha256sum -c -
           unzip -q /tmp/QuestPad-v0.8.0-RC3-SOURCE.zip -d /tmp/questpad-src
       - name: Prepare Android SDK
         shell: bash
