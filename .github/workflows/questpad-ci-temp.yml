@@ -1,0 +1,101 @@
+name: Temporary QuestPad 0.7.6 CI
+
+on:
+  push:
+    branches: [questpad-ci-temp]
+  workflow_dispatch:
+
+jobs:
+  build-questpad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore, test, and build QuestPad
+        shell: bash
+        run: |
+          set +e
+          exec > >(tee /tmp/questpad-ci.log) 2>&1
+          EXIT_CODE=0
+
+          echo "=== Runner ==="
+          uname -a
+          java -version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          command -v sdkmanager || true
+
+          echo "=== Restore source ==="
+          base64 -d questpad-ci/questpad-source.b64 > /tmp/QuestPad-v0.7.6-fixed-source.zip
+          RC=$?
+          if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
+          sha256sum /tmp/QuestPad-v0.7.6-fixed-source.zip
+          echo "ab0cf23042133082db6f397668472eaeb2b2ee9c62994febc33967c98f27a80e  /tmp/QuestPad-v0.7.6-fixed-source.zip" | sha256sum -c -
+          RC=$?
+          if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
+          mkdir -p /tmp/questpad-src
+          unzip -q -o /tmp/QuestPad-v0.7.6-fixed-source.zip -d /tmp/questpad-src
+          RC=$?
+          if [ $RC -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then EXIT_CODE=$RC; fi
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "=== Android SDK ==="
+            yes | sdkmanager --licenses >/dev/null 2>&1 || true
+            sdkmanager "platforms;android-34" "build-tools;35.0.0"
+            RC=$?
+            if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
+          fi
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "=== Unit tests + APK ==="
+            cd /tmp/questpad-src
+            chmod +x gradlew
+            ./gradlew testDebugUnitTest assembleDebug --stacktrace
+            RC=$?
+            if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
+          fi
+
+          echo "=== APK verification ==="
+          APK="/tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK" ]; then
+            unzip -l "$APK" | tee /tmp/apk-list.txt
+            if grep -q "libquestpad_engine.so" /tmp/apk-list.txt; then
+              echo "ERROR: external controller engine packaged"
+              [ $EXIT_CODE -eq 0 ] && EXIT_CODE=80
+            fi
+            if grep -q "questpad_vrshell_lease.dex" /tmp/apk-list.txt; then
+              echo "ERROR: old VrShell lease packaged"
+              [ $EXIT_CODE -eq 0 ] && EXIT_CODE=81
+            fi
+            sha256sum "$APK" | tee /tmp/apk.sha256
+          else
+            echo "No APK produced."
+          fi
+
+          echo "$EXIT_CODE" > /tmp/build.exit
+          echo "BUILD_EXIT=$EXIT_CODE"
+          exit 0
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestPad-v0.7.6-DIAGNOSTICS
+          path: |
+            /tmp/questpad-ci.log
+            /tmp/build.exit
+            /tmp/apk.sha256
+          if-no-files-found: warn
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestPad-v0.7.6-FIXED
+          path: /tmp/questpad-src/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: ignore
+
+      - name: Report result
+        if: always()
+        shell: bash
+        run: exit "$(cat /tmp/build.exit 2>/dev/null || echo 99)"
