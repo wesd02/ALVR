@@ -23,7 +23,6 @@ jobs:
           uname -a
           java -version
           echo "ANDROID_HOME=$ANDROID_HOME"
-          command -v sdkmanager || true
 
           echo "=== Restore source ==="
           base64 -d questpad-ci/questpad-source.b64 > /tmp/QuestPad-v0.7.6-fixed-source.zip
@@ -40,10 +39,24 @@ jobs:
 
           if [ $EXIT_CODE -eq 0 ]; then
             echo "=== Android SDK ==="
-            yes | sdkmanager --licenses >/dev/null 2>&1 || true
-            sdkmanager "platforms;android-34" "build-tools;35.0.0"
-            RC=$?
-            if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+            if [ ! -x "$SDKMANAGER" ]; then
+              SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 | head -1)"
+            fi
+            echo "SDKMANAGER=$SDKMANAGER"
+            if [ -n "$SDKMANAGER" ] && [ -x "$SDKMANAGER" ]; then
+              yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+              "$SDKMANAGER" "platforms;android-34" "build-tools;35.0.0"
+              RC=$?
+              if [ $RC -ne 0 ]; then EXIT_CODE=$RC; fi
+            else
+              echo "sdkmanager not found; checking whether API 34 is already installed."
+              ls -la "$ANDROID_HOME/platforms" || true
+              ls -la "$ANDROID_HOME/build-tools" || true
+              if [ ! -f "$ANDROID_HOME/platforms/android-34/android.jar" ]; then
+                EXIT_CODE=127
+              fi
+            fi
           fi
 
           if [ $EXIT_CODE -eq 0 ]; then
