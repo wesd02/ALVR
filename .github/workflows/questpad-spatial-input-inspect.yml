@@ -1,0 +1,63 @@
+name: QuestPad Spatial SDK input introspection
+on:
+  push:
+    branches: [questpad-ci-rc3]
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare RC5 source and resolve dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/questpad-src
+          mkdir -p /tmp/questpad-src
+          unzip -q questpad-ci/QuestPad-v0.8.0-RC5-SOURCE.zip -d /tmp/questpad-src
+          cd /tmp/questpad-src
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --no-daemon >/tmp/gradle-resolve.log 2>&1 || true
+      - name: Inspect Meta Spatial SDK jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/spatial-input-api.txt
+          : > "$OUT"
+          echo "=== Meta Spatial jars ===" >> "$OUT"
+          find "$HOME/.gradle/caches/modules-2/files-2.1/com.meta.spatial" -type f \( -name '*.jar' -o -name '*.aar' \) | sort >> "$OUT"
+          echo >> "$OUT"
+          while IFS= read -r f; do
+            case "$f" in
+              *.aar)
+                tmp="$(mktemp -d)"
+                unzip -q "$f" classes.jar -d "$tmp" 2>/dev/null || true
+                jarfile="$tmp/classes.jar"
+                ;;
+              *) jarfile="$f" ;;
+            esac
+            [ -f "$jarfile" ] || continue
+            classes="$(jar tf "$jarfile" 2>/dev/null | grep -Ei 'Controller|Input|Thumb|Axis|Gamepad' || true)"
+            [ -n "$classes" ] || continue
+            echo "=== $f ===" >> "$OUT"
+            echo "$classes" >> "$OUT"
+            while IFS= read -r cls; do
+              case "$cls" in
+                *.class)
+                  name="${cls%.class}"
+                  name="${name//\//.}"
+                  javap -classpath "$jarfile" -p "$name" 2>/dev/null | grep -Ei 'thumb|axis|stick|trigger|grip|vector2|button|controller' >> "$OUT" || true
+                  ;;
+              esac
+            done <<< "$classes"
+          done < <(find "$HOME/.gradle/caches/modules-2/files-2.1/com.meta.spatial" -type f \( -name '*.jar' -o -name '*.aar' \) | sort)
+          grep -Ei 'thumb|axis|stick|vector2|controller' "$OUT" | tail -n 1200 > /tmp/spatial-input-api-tail.txt || true
+      - name: Upload API dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: spatial-input-api
+          path: |
+            /tmp/spatial-input-api.txt
+            /tmp/spatial-input-api-tail.txt
+            /tmp/gradle-resolve.log
