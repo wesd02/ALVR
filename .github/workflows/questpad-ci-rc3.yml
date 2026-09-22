@@ -1,4 +1,4 @@
-name: QuestPad RC4 unsigned build
+name: QuestPad RC5 unsigned build
 
 on:
   push:
@@ -11,15 +11,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Restore exact RC4 source
+      - name: Restore exact RC5 source
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/questpad-src
           mkdir -p /tmp/questpad-src
-          cp questpad-ci/QuestPad-v0.8.0-RC4-SOURCE.zip /tmp/QuestPad-v0.8.0-RC4-SOURCE.zip
-          echo "a43b7b45aa191b45911dbf3af21885d445120b26bbc6cd27479979da0f3c869e  /tmp/QuestPad-v0.8.0-RC4-SOURCE.zip" | sha256sum -c -
-          unzip -q /tmp/QuestPad-v0.8.0-RC4-SOURCE.zip -d /tmp/questpad-src
+          cp questpad-ci/QuestPad-v0.8.0-RC5-SOURCE.zip /tmp/QuestPad-v0.8.0-RC5-SOURCE.zip
+          echo "7a819165708c2b74dcd660e3e4c9f9ef49d847f48a5cd150a967e2fa47ee90b5  /tmp/QuestPad-v0.8.0-RC5-SOURCE.zip" | sha256sum -c -
+          unzip -q /tmp/QuestPad-v0.8.0-RC5-SOURCE.zip -d /tmp/questpad-src
       - name: Prepare Android SDK
         shell: bash
         run: |
@@ -30,42 +30,42 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;35.0.0"
-      - name: Test and build RC4
+      - name: Test and build RC5
         shell: bash
         run: |
           set -euo pipefail
           cd /tmp/questpad-src
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleRelease --stacktrace
-      - name: Verify and zipalign RC4
+      - name: Verify and zipalign RC5
         shell: bash
         run: |
           set -euo pipefail
           APK=/tmp/questpad-src/app/build/outputs/apk/release/app-release-unsigned.apk
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           test -f "$APK"
-          "$AAPT" dump badging "$APK" | tee /tmp/rc4-badging.txt
-          grep -q "package: name='com.cornerofweird.questpad'" /tmp/rc4-badging.txt
-          grep -q "versionCode='84'" /tmp/rc4-badging.txt
-          grep -q "versionName='0.8.0-rc4'" /tmp/rc4-badging.txt
-          grep -q "sdkVersion:'32'" /tmp/rc4-badging.txt
-          grep -q "targetSdkVersion:'34'" /tmp/rc4-badging.txt
-          unzip -l "$APK" > /tmp/rc4-files.txt
-          ! grep -q "libquestpad_engine.so" /tmp/rc4-files.txt
-          ! grep -q "questpad_vrshell_lease.dex" /tmp/rc4-files.txt
-          ALIGNED=/tmp/QuestPad-v0.8.0-RC4-aligned-unsigned.apk
+          "$AAPT" dump badging "$APK" | tee /tmp/rc5-badging.txt
+          grep -q "package: name='com.cornerofweird.questpad'" /tmp/rc5-badging.txt
+          grep -q "versionCode='85'" /tmp/rc5-badging.txt
+          grep -q "versionName='0.8.0-rc5'" /tmp/rc5-badging.txt
+          grep -q "sdkVersion:'32'" /tmp/rc5-badging.txt
+          grep -q "targetSdkVersion:'34'" /tmp/rc5-badging.txt
+          unzip -l "$APK" > /tmp/rc5-files.txt
+          ! grep -q "libquestpad_engine.so" /tmp/rc5-files.txt
+          ! grep -q "questpad_vrshell_lease.dex" /tmp/rc5-files.txt
+          ALIGNED=/tmp/QuestPad-v0.8.0-RC5-aligned-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$APK" "$ALIGNED"
-          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 "$ALIGNED" | tee /tmp/rc4-zipalign.txt
-          sha256sum "$ALIGNED" > /tmp/rc4-aligned-unsigned.sha256
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 "$ALIGNED" | tee /tmp/rc5-zipalign.txt
+          sha256sum "$ALIGNED" > /tmp/rc5-aligned-unsigned.sha256
           mkdir -p /tmp/android-sign-tools
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-sign-tools/apksigner-35.0.0.jar
-      - name: Upload RC4 unsigned build
+      - name: Upload RC5 unsigned build
         uses: actions/upload-artifact@v4
         with:
-          name: QuestPad-v0.8.0-RC4-unsigned
+          name: QuestPad-v0.8.0-RC5-unsigned
           path: |
-            /tmp/QuestPad-v0.8.0-RC4-aligned-unsigned.apk
-            /tmp/rc4-badging.txt
-            /tmp/rc4-zipalign.txt
-            /tmp/rc4-aligned-unsigned.sha256
+            /tmp/QuestPad-v0.8.0-RC5-aligned-unsigned.apk
+            /tmp/rc5-badging.txt
+            /tmp/rc5-zipalign.txt
+            /tmp/rc5-aligned-unsigned.sha256
             /tmp/android-sign-tools/apksigner-35.0.0.jar
