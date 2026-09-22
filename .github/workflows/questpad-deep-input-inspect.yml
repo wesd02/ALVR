@@ -1,0 +1,50 @@
+name: QuestPad deep input API inspect
+on:
+  push:
+    branches: [questpad-ci-rc3]
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve Spatial SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/questpad-src
+          mkdir -p /tmp/questpad-src
+          unzip -q questpad-ci/QuestPad-v0.8.0-RC5-SOURCE.zip -d /tmp/questpad-src
+          cd /tmp/questpad-src
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --no-daemon >/tmp/resolve.log 2>&1 || true
+      - name: Dump controller-related APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/deep-input-api.txt
+          : > "$OUT"
+          for f in $(find "$HOME/.gradle/caches/modules-2/files-2.1/com.meta.spatial" -type f -name '*.aar' | sort); do
+            tmp="$(mktemp -d)"
+            unzip -q "$f" classes.jar -d "$tmp" 2>/dev/null || continue
+            jarfile="$tmp/classes.jar"
+            echo "===== $f =====" >> "$OUT"
+            for cls in               com.meta.spatial.runtime.VrActivity               com.meta.spatial.core.SpatialInterface               com.meta.spatial.runtime.Scene               com.meta.spatial.vr.InputInfo               com.meta.spatial.vr.LocomotionSystem               com.meta.spatial.vr.InputSystem               com.meta.spatial.isdk.IsdkSystem               com.meta.spatial.toolkit.TickControllerSystem               com.meta.spatial.toolkit.Controller; do
+              classpath="$(printf '%s' "$cls" | tr '.' '/')"
+              if jar tf "$jarfile" | grep -q "^$classpath.class$"; then
+                echo "--- $cls ---" >> "$OUT"
+                javap -classpath "$jarfile" -p -s "$cls" >> "$OUT" 2>&1 || true
+                echo "--- BYTECODE $cls ---" >> "$OUT"
+                javap -classpath "$jarfile" -p -c "$cls" >> "$OUT" 2>&1 || true
+              fi
+            done
+          done
+          grep -Ein "axis|thumb|stick|motion|gamecontroller|inputdevice|scroll|vector2|buttonstate|controller" "$OUT" > /tmp/deep-input-grep.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deep-input-api
+          path: |
+            /tmp/deep-input-api.txt
+            /tmp/deep-input-grep.txt
+            /tmp/resolve.log
